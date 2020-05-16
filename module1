@@ -1,0 +1,878 @@
+Option Explicit
+' Basic data manipulation and a linear module - Jari Hiltunen 2016
+'
+' My first option was to push information into Octave from Excel and let Octave do calculus,
+' but I did not find API nor other way to interact with Octave.
+'
+' This module will take care of linear classification of the information and create a decision-tree type of solution.
+' We will pull an vector/array based on matched symptoms and then count how those matches repeats in each disease.
+'
+' Microsoft Excel addin "Azure Machine Learning" is available, but I do not want to share my API key. Therefore
+' I decided to do this project by using those capabilities what Excel has built in.
+'
+' Idea of supervised learing is to classify diseases and symptoms into two or more classes based on training data.
+' The training data consist of measurable quantitative features. Applies to SVM etc. methods.
+'
+' For each training data we have predetermined classes based on observation on the objects. See OctaveLink sheet.
+' The predetermided classes will be adjusted by user input what is right or wrong -> supervised learning.
+' Practically this is yes/no question, which is collected to MaxNames-page (false positives).
+'
+' The data is not properly linearly separable. I wanted to separate data by an ellipse. That is not possible
+' without commercial addons to Excel or without Azure plugin.
+'
+' We cannot find non-linear decision boundary for predicted disease with this simplified method.
+'
+' Theoretically we shall first give training data and then see if new data changes our decision boundary
+' but I will use all data without changing boundary. Widening and narrrowing the margin in between
+' two groups of values from 1  to 6 (maxhits), touching as many as data points from each side, gives us the widest margin.
+'
+' If you would like to port this into SVM as an example, then change values at OctaveLink as follows:
+' - if scoring function is negative (-1), it is classified as belonging to class y = -1
+' - if the score is positive (1), it is classified belonging class y = 1
+'
+' The scoring function in equation to compute score for an input vector x (x1-x6) works as follows:
+' 1. Function operates over every data point in a training set (i = 1 through m = number of diseases in db).
+' 2. x^(i), y^(i) represents the _i_th training example:
+'    -  x^(i) is an input vector which may be any dimension.
+'    -  y^(i) is a class label, which has one of only two values, either -1 or 1.
+'    -  a_i is the coefficient associated with the _i_th training example.
+' 3. x is the input vector that we are trying to classify
+' 4. K is what is called a kernel function:
+'    - It operates on two vectors and the output is a scalar.
+'    - There are different possible choices of kernel function, we’ll look at this more later.
+' 5. b is a scalar value.
+'
+' This project is done for Åbo Akademi Machine Learning course.
+
+Public Sub readisease()
+' This sub will read diseases from field names symptom1-6 and find where they exists
+' Then we execute series of macros for method #1 and new data such as vectors we will benefit in other calcs
+
+On Error GoTo Whoa 'Disable this if you would like to debug
+Application.EnableEvents = False ' Enable this in case you would like to debug
+
+' Make reservations for variables
+Dim Symptom1 As String, Symptom2 As String, Symptom3 As String, Symptom4 As String, Symptom5 As String, Symptom6 As String, msg As String
+Dim foundAddr1() As String, foundAddr2() As String, foundAddr3() As String, foundAddr4() As String ' These are for found addresses
+Dim foundAddr5() As String, foundAddr6() As String ' These are for found addresses
+Dim i As Integer, tempRange As Range
+' You might want to name output fields as well. Now treated as static column+row addresses in the code
+
+'Protect the workbook if needed (this does not protect shells)
+'ActiveWorkbook.protect Password:="password", Structure:=True, Windows:=True
+
+'Unprotect the workbook if needed
+ActiveWorkbook.Unprotect Password:="password"
+
+' Cleanup old values
+cleanup
+
+' Pick values from the user sheet to variables - keep in mind that named ranges must exist!
+Symptom1 = ThisWorkbook.Sheets("User").Range("symptom1").Value
+Symptom2 = ThisWorkbook.Sheets("User").Range("symptom2").Value
+Symptom3 = ThisWorkbook.Sheets("User").Range("symptom3").Value
+Symptom4 = ThisWorkbook.Sheets("User").Range("symptom4").Value
+Symptom5 = ThisWorkbook.Sheets("User").Range("symptom5").Value
+Symptom6 = ThisWorkbook.Sheets("User").Range("symptom6").Value
+
+' Test if all is empty
+If Symptom1 = "" And Symptom2 = "" And Symptom3 = "" And Symptom4 = "" And Symptom5 = "" And Symptom6 = "" Then
+  MsgBox ("Symptom inputs empty. Type something and press Ctrl+r.")
+  End
+End If
+
+Application.ScreenUpdating = False ' This will speed up process
+
+' Collect information if field contains text and then build a disases array etc
+' You might want to use named cells for output. Now treated as static column+row addresses in the code.
+' If you change sheet layout, you have to check these referrals!
+If Symptom1 <> "" Then
+Range("A5:E5").Interior.ColorIndex = 0
+  foundAddr1() = foundAddresses(Symptom1) 'Build address list of words found
+ Set tempRange = Sheets("db").Range(foundAddr1(0)) ' Setting string element as range element
+   ThisWorkbook.Sheets("User").Range("B5").Value = UBound(foundAddr1, 1) + 1 'Display how many diseases matches to word
+    ThisWorkbook.Sheets("User").Range("D5").Value = ThisWorkbook.Sheets("db").Range("A" & tempRange.row).Value ' Show first disease name
+  Set tempRange = Sheets("db").Range(foundAddr1(UBound(foundAddr1, 1))) ' Setting string element as range element
+ ThisWorkbook.Sheets("User").Range("E5").Value = ThisWorkbook.Sheets("db").Range("A" & tempRange.row).Value ' Show last disease name
+' List diseases to the OctaveLink page
+  For i = 0 To (UBound(foundAddr1, 1))
+   Set tempRange = Sheets("db").Range(foundAddr1(i)) ' Setting string element as range element
+    ThisWorkbook.Sheets("OctaveLink").Cells(i + 10, 1).Value = ThisWorkbook.Sheets("db").Range("A" & tempRange.row).Value
+  Next i
+' Change conditional formatting to yellow if found
+  Range("A5:E5").Interior.ColorIndex = 37
+End If
+
+' Collect information if field contains text and then build a disases array etc
+If Symptom2 <> "" Then
+Range("A6:E6").Interior.ColorIndex = 0
+  foundAddr2() = foundAddresses(Symptom2) 'Build address list of words found
+    Set tempRange = Sheets("db").Range(foundAddr2(0)) ' Setting string element as range element
+     ThisWorkbook.Sheets("User").Range("B6").Value = UBound(foundAddr2, 1) + 1 'Display how many diseases matches to word
+      ThisWorkbook.Sheets("User").Range("D6").Value = ThisWorkbook.Sheets("db").Range("A" & tempRange.row).Value ' Show first disease name
+     Set tempRange = Sheets("db").Range(foundAddr2(UBound(foundAddr2, 1))) ' Setting string element as range element
+        ThisWorkbook.Sheets("User").Range("E6").Value = ThisWorkbook.Sheets("db").Range("A" & tempRange.row).Value ' Show last disease name
+' List diseases to the OctaveLink page
+  For i = 0 To (UBound(foundAddr2, 1))
+   Set tempRange = Sheets("db").Range(foundAddr2(i)) ' Setting string element as range element
+    ThisWorkbook.Sheets("OctaveLink").Cells(i + 10, 3).Value = ThisWorkbook.Sheets("db").Range("A" & tempRange.row).Value
+  Next i
+  ' Change conditional formatting to yellow if found
+  Range("A6:E6").Interior.ColorIndex = 37
+
+End If
+
+' Collect information if field contains text and then build a disases array etc
+If Symptom3 <> "" Then
+Range("A7:E7").Interior.ColorIndex = 0
+  foundAddr3() = foundAddresses(Symptom3) 'Build address list of words found
+      Set tempRange = Sheets("db").Range(foundAddr3(0)) ' Setting string element as range element
+     ThisWorkbook.Sheets("User").Range("B7").Value = UBound(foundAddr3, 1) + 1 'Display how many diseases matches to word
+      ThisWorkbook.Sheets("User").Range("D7").Value = ThisWorkbook.Sheets("db").Range("A" & tempRange.row).Value ' Show first disease name
+     Set tempRange = Sheets("db").Range(foundAddr3(UBound(foundAddr3, 1))) ' Setting string element as range element
+        ThisWorkbook.Sheets("User").Range("E7").Value = ThisWorkbook.Sheets("db").Range("A" & tempRange.row).Value ' Show last disease name
+' List diseases to the OctaveLink page
+  For i = 0 To (UBound(foundAddr3, 1))
+   Set tempRange = Sheets("db").Range(foundAddr3(i)) ' Setting string element as range element
+    ThisWorkbook.Sheets("OctaveLink").Cells(i + 10, 5).Value = ThisWorkbook.Sheets("db").Range("A" & tempRange.row).Value
+  Next i
+  ' Change conditional formatting to yellow if found
+  Range("A7:E7").Interior.ColorIndex = 37
+
+End If
+
+' Collect information if field contains text and then build a disases array etc
+If Symptom4 <> "" Then
+Range("A8:E8").Interior.ColorIndex = 0
+  foundAddr4() = foundAddresses(Symptom4) 'Build address list of words found
+    Set tempRange = Sheets("db").Range(foundAddr4(0)) ' Setting string element as range element
+     ThisWorkbook.Sheets("User").Range("B8").Value = UBound(foundAddr4, 1) + 1 'Display how many diseases matches to word
+      ThisWorkbook.Sheets("User").Range("D8").Value = ThisWorkbook.Sheets("db").Range("A" & tempRange.row).Value ' Show first disease name
+     Set tempRange = Sheets("db").Range(foundAddr4(UBound(foundAddr4, 1))) ' Setting string element as range element
+        ThisWorkbook.Sheets("User").Range("E8").Value = ThisWorkbook.Sheets("db").Range("A" & tempRange.row).Value ' Show last disease name
+' List diseases to the OctaveLink page
+  For i = 0 To (UBound(foundAddr4, 1))
+   Set tempRange = Sheets("db").Range(foundAddr4(i)) ' Setting string element as range element
+    ThisWorkbook.Sheets("OctaveLink").Cells(i + 10, 7).Value = ThisWorkbook.Sheets("db").Range("A" & tempRange.row).Value
+  Next i
+  ' Change conditional formatting to yellow if found
+  Range("A8:E8").Interior.ColorIndex = 37
+
+End If
+
+' Collect information if field contains text and then build a disases array etc
+If Symptom5 <> "" Then
+  ' Change conditional formatting to whie
+  Range("A9:E9").Interior.ColorIndex = 0
+  foundAddr5() = foundAddresses(Symptom5) 'Build address list of words found
+     Set tempRange = Sheets("db").Range(foundAddr5(0)) ' Setting string element as range element
+     ThisWorkbook.Sheets("User").Range("B9").Value = UBound(foundAddr5, 1) + 1 'Display how many diseases matches to word
+      ThisWorkbook.Sheets("User").Range("D9").Value = ThisWorkbook.Sheets("db").Range("A" & tempRange.row).Value ' Show first disease name
+     Set tempRange = Sheets("db").Range(foundAddr5(UBound(foundAddr5, 1))) ' Setting string element as range element
+        ThisWorkbook.Sheets("User").Range("E9").Value = ThisWorkbook.Sheets("db").Range("A" & tempRange.row).Value ' Show last disease name
+' List diseases to the OctaveLink page
+  For i = 0 To (UBound(foundAddr5, 1))
+   Set tempRange = Sheets("db").Range(foundAddr5(i)) ' Setting string element as range element
+    ThisWorkbook.Sheets("OctaveLink").Cells(i + 10, 9).Value = ThisWorkbook.Sheets("db").Range("A" & tempRange.row).Value
+  Next i
+  ' Change conditional formatting to yellow if found
+  Range("A9:E9").Interior.ColorIndex = 37
+
+End If
+
+' Collect information if field contains text and then build a disases array etc
+If Symptom6 <> "" Then
+Range("A10:E10").Interior.ColorIndex = 0
+  foundAddr6() = foundAddresses(Symptom6) 'Build address list of words found
+     Set tempRange = Sheets("db").Range(foundAddr6(0)) ' Setting string element as range element
+     ThisWorkbook.Sheets("User").Range("B10").Value = UBound(foundAddr6, 1) + 1 'Display how many diseases matches to word
+      ThisWorkbook.Sheets("User").Range("D10").Value = ThisWorkbook.Sheets("db").Range("A" & tempRange.row).Value ' Show first disease name
+     Set tempRange = Sheets("db").Range(foundAddr6(UBound(foundAddr6, 1))) ' Setting string element as range element
+        ThisWorkbook.Sheets("User").Range("E10").Value = ThisWorkbook.Sheets("db").Range("A" & tempRange.row).Value ' Show last disease name
+' List diseases to the OctaveLink page
+  For i = 0 To (UBound(foundAddr6, 1))
+   Set tempRange = Sheets("db").Range(foundAddr6(i)) ' Setting string element as range element
+    ThisWorkbook.Sheets("OctaveLink").Cells(i + 10, 11).Value = ThisWorkbook.Sheets("db").Range("A" & tempRange.row).Value
+  Next i
+  ' Change conditional formatting to yellow if found
+  Range("A10:E10").Interior.ColorIndex = 37
+
+End If
+
+' Select found diseases and name selected ranges from listedDiseases1-6
+listedSelectNameArea
+
+' This will bring in matrix of propabilities
+calculateSame
+
+' Give names for calculated values, eases range selections in later calculations
+listedSelectNumberArea
+
+' List names of maximum hit diseases
+listMaxName
+
+' Bring final results of the method 1 to the user sheet
+finalMethod1
+
+' Check if vectors and prediction is found from the Learned sheet
+checkLearned
+
+
+
+LetsContinue:
+    Application.EnableEvents = True
+    Exit Sub
+
+Whoa:
+    MsgBox Err.Description
+    Resume LetsContinue
+    
+    
+End Sub
+
+Public Function foundAddresses(ByVal Symptom As String) As String()
+' Input is a Symptom1-6, which we will try to find from the database
+' Output is a address of the matching disease
+' Search method is PARTIAL text given in input fields at User sheet
+On Error GoTo Whoa
+Dim sympAddresses() As String 'We will redim this every time
+Dim i As Integer, y As Integer ' For counter
+Dim FoundSymptom As Range 'Found word address
+Dim ws As Worksheet 'Just for making shorter code
+Dim lRow As Long 'Range definition row number
+Dim aCell As Range, range1 As Range 'Range definition
+Dim firstAddress As String 'Where we see first search hit
+Set ws = ThisWorkbook.Sheets("db") ' Select db sheet
+' Check if db sheet has symptoms column and read range of the data
+' This design takes into account that column may be relocated in the database
+With ws
+        ' Find the cell which has the name symptoms
+        Set aCell = .Range("A1:Z1").Find("symptoms")
+        'If the cell is found
+        If Not aCell Is Nothing Then
+            'Get the last row in that column and check if the last row is > 1
+            lRow = .Range(Split(.Cells(, aCell.Column).Address, "$")(1) & .rows.Count).End(xlUp).row
+            If lRow > 1 Then
+                ' Set Range
+                Set range1 = .Range(aCell.Offset(1), .Cells(lRow, aCell.Column))
+            End If
+        End If
+    End With
+
+i = 0 ' Reset counter value
+ 
+With range1 'This is range of the symptoms ~column
+' Here we define what we are trying to find
+Set FoundSymptom = range1.Find(what:=Symptom, LookAt:=xlPart, LookIn:=xlValues, MatchCase:=False, SearchFormat:=False)
+  If Not FoundSymptom Is Nothing Then
+      ' First address is referral for subsequent searches
+      firstAddress = FoundSymptom.Address
+   Do
+          ReDim Preserve sympAddresses(i) ' Resize the array
+          sympAddresses(i) = FoundSymptom.Address 'Array of adresses
+            i = i + 1 'Increase counter
+       Set FoundSymptom = .FindNext(FoundSymptom)
+       If FoundSymptom Is Nothing Then
+         MsgBox "!!Not found - should not end here!!!" 'This is just for case if something goes wrong. Should never come here.
+       End If
+     Loop While Not FoundSymptom Is Nothing And FoundSymptom.Address <> firstAddress
+   End If
+End With
+
+' Inform user if nothing found
+If i > 0 Then
+   foundAddresses = sympAddresses ' Return an array of found addresses
+   Else 'Return error
+      MsgBox "Not Found. Try another wording and press Ctrl+r"
+       ' Reason I do this this way is fact that otherwise function will return null, which is not properly handled in calling subs
+     End 'Stopping all macros
+   End If
+       
+LetsContinue:
+    Application.EnableEvents = True
+    Exit Function
+
+Whoa:
+    MsgBox Err.Description
+    Resume LetsContinue
+
+End Function
+
+Public Sub cleanup()
+
+    ' Cleanup old values from User-sheet
+    ThisWorkbook.Sheets("User").Range("B5:E10").Clear
+    ThisWorkbook.Sheets("User").Range("B13:E22").Clear
+    ThisWorkbook.Sheets("User").Range("B25:E33").Clear
+    ' Cleanup OctaveLink-sheet
+    ThisWorkbook.Sheets("OctaveLink").Range("A10:L1000").Clear 'Should be plenty
+    ' Update pivots
+    ThisWorkbook.Sheets("MaxNames").PivotTables("DupesbyDiseases").RefreshTable
+    ' Set colour of result row
+    ThisWorkbook.Sheets("User").Range("B13:E22").Interior.ColorIndex = 0
+    ThisWorkbook.Sheets("User").Range("B25:E33").Interior.ColorIndex = 0
+    ' Remove learned statement
+    ThisWorkbook.Sheets("User").Range("E12").Value = ""
+    
+End Sub
+
+Sub listedSelectNameArea()
+' This sub will give name names of listed diseases for later calculations
+On Error GoTo Whoa
+Worksheets("OctaveLink").Activate
+' Idea is to exapand selection range by amount of listed diseases
+' The xlDown procedure is not robust and should not be used!
+' Selects listed diseases and gives them proper name
+If Range("B3").Value > 0 Then
+   Range("A10").Select
+   Selection.Resize(Range("B3").Value).Select
+   'Set name for the range diseases
+   Selection.Name = "listedDiseases1"
+End If
+
+If Range("D3").Value > 0 Then
+       Range("C10").Select
+       Selection.Resize(Range("D3").Value).Select
+       'Set name for the range diseases #2
+       Selection.Name = "listedDiseases2"
+End If
+
+If Range("F3").Value > 0 Then
+      Range("E10").Select
+      Selection.Resize(Range("F3").Value).Select
+     'Set name for the range diseases #3
+      Selection.Name = "listedDiseases3"
+End If
+
+If Range("H3").Value > 0 Then
+     Range("G10").Select
+      Selection.Resize(Range("H3").Value).Select
+     'Set name for the range diseases #4
+      Selection.Name = "listedDiseases4"
+End If
+
+If Range("J3").Value > 0 Then
+      Range("I10").Select
+      Selection.Resize(Range("J3").Value).Select
+     'Set name for the range diseases #5
+      Selection.Name = "listedDiseases5"
+End If
+   
+If Range("L3").Value > 0 Then
+     Range("K10").Select
+     Selection.Resize(Range("L3").Value).Select
+    'Set name for the range diseases #6
+     Selection.Name = "listedDiseases6"
+End If
+
+Worksheets("User").Activate
+
+LetsContinue:
+    Application.EnableEvents = True
+    Exit Sub
+
+Whoa:
+    MsgBox Err.Description
+    Resume LetsContinue
+
+End Sub
+
+Sub listedSelectNumberArea()
+On Error GoTo Whoa
+' This sub will give name calculated ranges - you can use top left name ranges if you would like to see areas
+Worksheets("OctaveLink").Activate
+
+' Selects calculated values and gives name
+If Range("B3").Value > 0 Then
+   Range("B10").Select
+   Selection.Resize(Range("B3").Value).Select
+   'Set name for the range diseases #1
+   Selection.Name = "sameDiseaseCount1"
+End If
+
+' Selects calculated values and gives name
+If Range("D3").Value > 0 Then
+   Range("D10").Select
+   Selection.Resize(Range("D3").Value).Select
+   'Set name for the range diseases #2
+   Selection.Name = "sameDiseaseCount2"
+End If
+
+' Selects calculated values and gives name
+If Range("F3").Value > 0 Then
+   Range("F10").Select
+   Selection.Resize(Range("F3").Value).Select
+    'Set name for the range diseases #3
+      Selection.Name = "sameDiseaseCount3"
+End If
+
+' Selects calculated values and gives name
+If Range("H3").Value > 0 Then
+   Range("H10").Select
+   Selection.Resize(Range("H3").Value).Select
+   'Set name for the range diseases #4
+    Selection.Name = "sameDiseaseCount4"
+End If
+
+' Selects calculated values and gives name
+If Range("J3").Value > 0 Then
+   Range("J10").Select
+   Selection.Resize(Range("J3").Value).Select
+   'Set name for the range diseases #5
+   Selection.Name = "sameDiseaseCount5"
+End If
+
+' Selects calculated values and gives name
+If Range("L3").Value > 0 Then
+   Range("L10").Select
+   Selection.Resize(Range("L3").Value).Select
+  'Set name for the range diseases #6
+   Selection.Name = "sameDiseaseCount6"
+End If
+
+Worksheets("User").Activate
+
+LetsContinue:
+    Application.EnableEvents = True
+    Exit Sub
+
+Whoa:
+    MsgBox Err.Description
+    Resume LetsContinue
+
+End Sub
+
+Sub calculateSame()
+' This sub will use formula COUNTIF(listedDiseases1;A10)+COUNTIF(listedDiseases2;A10)+
+' COUNTIF(listedDiseases3;A10)+COUNTIF(listedDiseases4;A10)+COUNTIF(listedDiseases5;A10)+COUNTIF(listedDiseases6;A10)-1
+' and fill it as needed for all rows where data exists. OBS! Named ranges MUST exist before this sub!
+' For FINLAND! If Formula contains ; as a separator, replace it in the VBA with ,
+On Error GoTo Whoa
+Dim k As Integer
+Worksheets("OctaveLink").Activate
+' Reason for else-if statement is making sure that if just one disease is listed, we don't fill down to xlDown :)
+' For diseaselist #1
+If Range("A10").Value <> "" And Range("A11") <> "" Then
+   k = ThisWorkbook.Sheets("Octavelink").Range("B3").Value - 1 'Number of diseases
+   Range("B10").Select ' First row of the disease
+   ' Paste first formula
+   Selection.Formula = "=COUNTIF(listedDiseases1,A10)+COUNTIF(listedDiseases2,A10)+COUNTIF(listedDiseases3,A10)+COUNTIF(listedDiseases4,A10)+COUNTIF(listedDiseases5,A10)+COUNTIF(listedDiseases6,A10)"
+   Range("B10:" & "B" & 10 + k).FillDown
+   Else
+   Range("B10").Select
+   Selection.Formula = "=COUNTIF(listedDiseases1,A10)+COUNTIF(listedDiseases2,A10)+COUNTIF(listedDiseases3,A10)+COUNTIF(listedDiseases4,A10)+COUNTIF(listedDiseases5,A10)+COUNTIF(listedDiseases6,A10)"
+End If
+
+' For diseaselist #2
+If Range("C10").Value <> "" And Range("C11") <> "" Then
+   k = ThisWorkbook.Sheets("Octavelink").Range("D3").Value - 1 'Number of diseases
+   Range("D10").Select ' First row of the disease
+   ' Paste first formula
+   Selection.Formula = "=COUNTIF(listedDiseases1,C10)+COUNTIF(listedDiseases2,C10)+COUNTIF(listedDiseases3,C10)+COUNTIF(listedDiseases4,C10)+COUNTIF(listedDiseases5,C10)+COUNTIF(listedDiseases6,C10)"
+   Range("D10:" & "D" & 10 + k).FillDown
+   Else
+   Range("D10").Select
+   Selection.Formula = "=COUNTIF(listedDiseases1,C10)+COUNTIF(listedDiseases2,C10)+COUNTIF(listedDiseases3,C10)+COUNTIF(listedDiseases4,C10)+COUNTIF(listedDiseases5,C10)+COUNTIF(listedDiseases6,C10)"
+End If
+
+' For diseaselist #3
+If Range("E10").Value <> "" And Range("E11") <> "" Then
+   k = ThisWorkbook.Sheets("Octavelink").Range("F3").Value - 1 'Number of diseases
+   Range("F10").Select ' First row of the disease
+   ' Paste first formula
+   Selection.Formula = "=COUNTIF(listedDiseases1,E10)+COUNTIF(listedDiseases2,E10)+COUNTIF(listedDiseases3,E10)+COUNTIF(listedDiseases4,E10)+COUNTIF(listedDiseases5,E10)+COUNTIF(listedDiseases6,E10)"
+    Range("F10:" & "F" & 10 + k).FillDown 'Fill down from row 10
+   Else 'Just one listed
+    Range("F10").Select
+   Selection.Formula = "=COUNTIF(listedDiseases1,E10)+COUNTIF(listedDiseases2,E10)+COUNTIF(listedDiseases3,E10)+COUNTIF(listedDiseases4,E10)+COUNTIF(listedDiseases5,E10)+COUNTIF(listedDiseases6,E10)"
+End If
+
+' For diseaselist #4
+If Range("G10").Value <> "" And Range("G11") <> "" Then
+   k = ThisWorkbook.Sheets("Octavelink").Range("H3").Value - 1 'Number of diseases
+   Range("H10").Select ' First row of the disease
+   ' Paste first formula
+   Selection.Formula = "=COUNTIF(listedDiseases1,G10)+COUNTIF(listedDiseases2,G10)+COUNTIF(listedDiseases3,G10)+COUNTIF(listedDiseases4,G10)+COUNTIF(listedDiseases5,G10)+COUNTIF(listedDiseases6,G10)"
+   Range("H10:" & "H" & 10 + k).FillDown
+   Else
+   Range("H10").Select
+   Selection.Formula = "=COUNTIF(listedDiseases1,G10)+COUNTIF(listedDiseases2,G10)+COUNTIF(listedDiseases3,G10)+COUNTIF(listedDiseases4,G10)+COUNTIF(listedDiseases5,G10)+COUNTIF(listedDiseases6,G10)"
+End If
+
+
+' For diseaselist #5
+If Range("I10").Value <> "" And Range("I11") <> "" Then
+   k = ThisWorkbook.Sheets("Octavelink").Range("J3").Value - 1 'Number of diseases
+   Range("J10").Select ' First row of the disease
+   ' Paste first formula
+   Selection.Formula = "=COUNTIF(listedDiseases1,I10)+COUNTIF(listedDiseases2,I10)+COUNTIF(listedDiseases3,I10)+COUNTIF(listedDiseases4,I10)+COUNTIF(listedDiseases5,I10)+COUNTIF(listedDiseases6,I10)"
+   Range("J10:" & "J" & 10 + k).FillDown
+   Else
+    Range("J10").Select
+    Selection.Formula = "=COUNTIF(listedDiseases1,I10)+COUNTIF(listedDiseases2,I10)+COUNTIF(listedDiseases3,I10)+COUNTIF(listedDiseases4,I10)+COUNTIF(listedDiseases5,I10)+COUNTIF(listedDiseases6,I10)"
+End If
+
+
+' For diseaselist #6
+If Range("K10").Value <> "" And Range("K11").Value <> "" Then
+   k = ThisWorkbook.Sheets("Octavelink").Range("L3").Value - 1 'Number of diseases
+   Range("L10").Select ' First row of the disease
+   ' Paste first formula
+   Selection.Formula = "=COUNTIF(listedDiseases1,K10)+COUNTIF(listedDiseases2,K10)+COUNTIF(listedDiseases3,K10)+COUNTIF(listedDiseases4,K10)+COUNTIF(listedDiseases5,K10)+COUNTIF(listedDiseases6,K10)"
+   Range("L10:" & "L" & 10 + k).FillDown
+   Else 'if just 1 disease
+    Range("L10").Select ' First row of the disease
+   Selection.Formula = "=COUNTIF(listedDiseases1,K10)+COUNTIF(listedDiseases2,K10)+COUNTIF(listedDiseases3,K10)+COUNTIF(listedDiseases4,K10)+COUNTIF(listedDiseases5,K10)+COUNTIF(listedDiseases6,K10)"
+ End If
+
+Worksheets("User").Activate
+
+LetsContinue:
+    Application.EnableEvents = True
+    Exit Sub
+
+Whoa:
+    MsgBox Err.Description
+    Resume LetsContinue
+
+End Sub
+
+Sub listMaxName()
+' This sub will list name of the disease to the OctaveLink sheet
+On Error GoTo Whoa
+Dim col, row
+Worksheets("OctaveLink").Activate
+  
+If Range("A10").Value <> "" Then
+  ThisWorkbook.Sheets("Octavelink").Range("B4").Select
+  col = Split(Selection.Value, "$")(1)
+  row = Split(Selection.Value, "$")(2)
+  Range("A6").Select ' Here we put name of the disease
+  Selection.Formula = "=A" & row ' Here name in A columns
+End If
+  
+If Range("C10").Value <> "" Then
+  ThisWorkbook.Sheets("Octavelink").Range("D4").Select
+  col = Split(Selection.Value, "$")(1)
+  row = Split(Selection.Value, "$")(2)
+  Range("C6").Select ' Here we put name of the disease
+  Selection.Formula = "=C" & row ' Here name in C columns
+End If
+  
+  
+If Range("E10").Value <> "" Then
+  ThisWorkbook.Sheets("Octavelink").Range("F4").Select
+  col = Split(Selection.Value, "$")(1)
+  row = Split(Selection.Value, "$")(2)
+  Range("E6").Select ' Here we put name of the disease
+  Selection.Formula = "=E" & row ' Here name in E columns
+End If
+  
+  
+If Range("G10").Value <> "" Then
+  ThisWorkbook.Sheets("Octavelink").Range("H4").Select
+  col = Split(Selection.Value, "$")(1)
+  row = Split(Selection.Value, "$")(2)
+  Range("G6").Select ' Here we put name of the disease
+  Selection.Formula = "=G" & row ' Here name in G columns
+End If
+  
+If Range("I10").Value <> "" Then
+  ThisWorkbook.Sheets("Octavelink").Range("J4").Select
+  col = Split(Selection.Value, "$")(1)
+  row = Split(Selection.Value, "$")(2)
+  Range("I6").Select ' Here we put name of the disease
+  Selection.Formula = "=I" & row ' Here name in I columns
+End If
+  
+If Range("K10").Value <> "" Then
+  ThisWorkbook.Sheets("Octavelink").Range("L4").Select
+  col = Split(Selection.Value, "$")(1)
+  row = Split(Selection.Value, "$")(2)
+  Range("K6").Select ' Here we put name of the disease
+  Selection.Formula = "=K" & row ' Here name in K columns
+End If
+  
+' Update pivots
+ThisWorkbook.Sheets("MaxNames").PivotTables("DupesbyDiseases").RefreshTable
+Worksheets("User").Activate
+' Set name into User page
+ ThisWorkbook.Sheets("User").Range("B13").Formula = "=MaxNames!$D$9" ' Here we put name from the MaxNamed D9
+ ' If there is not match from the pivot, then we just choose the first hit
+ If Range("B13").Value = 0 Then 'This means that we have not found diseases at least twice = no estimation
+ ' We just put first occurence of the list - we shall rethink this or perhaps use SVM approach
+ ThisWorkbook.Sheets("User").Range("B13").Formula = "=User!$D$5"
+ End If
+
+LetsContinue:
+    Application.EnableEvents = True
+    Exit Sub
+
+Whoa:
+    MsgBox Err.Description
+    Resume LetsContinue
+    
+End Sub
+
+Sub finalMethod1()
+' This sub lists final selected disease to the User sheet by using method 1
+On Error GoTo Whoa
+Dim Disease As String
+Dim disAddress As String
+Dim col, row
+
+' Colour of the range
+Range("B13:E22").Interior.ColorIndex = 4
+If ThisWorkbook.Sheets("User").Range("B13").Value <> "" Then
+  Disease = ThisWorkbook.Sheets("User").Range("B13").Value 'The disease from the pivot
+  ' Let we see which address it came from
+  disAddress = findDiseaseAddress(Disease)
+  ' If you hit into error here, make sure range B18 in fact has disease name listed
+  col = Split(disAddress, "$")(1)
+  row = Split(disAddress, "$")(2)
+'  Disease reference
+  ThisWorkbook.Sheets("User").Range("B14").Value = ThisWorkbook.Sheets("db").Range("B" & row).Value
+'Summary
+  ThisWorkbook.Sheets("User").Range("B15").Value = ThisWorkbook.Sheets("db").Range("c" & row).Value
+'Causes
+  ThisWorkbook.Sheets("User").Range("B16").Value = ThisWorkbook.Sheets("db").Range("d" & row).Value
+'Full list of symptoms
+  ThisWorkbook.Sheets("User").Range("B17").Value = ThisWorkbook.Sheets("db").Range("e" & row).Value
+'Exams and tests
+  ThisWorkbook.Sheets("User").Range("B18").Value = ThisWorkbook.Sheets("db").Range("f" & row).Value
+'Treatment
+  ThisWorkbook.Sheets("User").Range("B19").Value = ThisWorkbook.Sheets("db").Range("g" & row).Value
+'Prognosis
+  ThisWorkbook.Sheets("User").Range("B20").Value = ThisWorkbook.Sheets("db").Range("h" & row).Value
+'Possible complications
+  ThisWorkbook.Sheets("User").Range("B21").Value = ThisWorkbook.Sheets("db").Range("i" & row).Value
+'Alternative Names
+  ThisWorkbook.Sheets("User").Range("B22").Value = ThisWorkbook.Sheets("db").Range("j" & row).Value
+    
+    
+End If
+LetsContinue:
+    Application.EnableEvents = True
+    Exit Sub
+
+Whoa:
+    MsgBox Err.Description
+    Resume LetsContinue
+
+End Sub
+Public Function findDiseaseAddress(ByVal Disease As String) As String
+On Error GoTo Whoa
+' This function will search for EXCACT text given and return address of the hit
+' Used from OctaveLink sheet
+' Input is the disease name as a string
+' Output is address of the disease
+Dim foundDisease As Range 'Found word address
+Dim ws As Worksheet
+Dim lRow As Long 'Range definition row number
+Dim aCell As Range, range1 As Range 'Range definition
+Set ws = ThisWorkbook.Sheets("db") ' Select db sheet
+
+' Check if db sheet has disease column and read range of the data ... should be there
+With ws
+        ' Find the cell which has the name - now just A1 (change this if you modify database or make this dynamic)
+        Set aCell = .Range("A1").Find("diseasename")
+        'If the cell is found
+        If Not aCell Is Nothing Then
+            'Get the last row in that column and check if the last row is > 1
+            lRow = .Range(Split(.Cells(, aCell.Column).Address, "$")(1) & .rows.Count).End(xlUp).row
+            If lRow > 1 Then
+                ' Set Range
+                Set range1 = .Range(aCell.Offset(1), .Cells(lRow, aCell.Column))
+            End If
+        End If
+    End With
+ 
+With range1
+
+' Here we do the actucal search and return address of the disease in the db
+Set foundDisease = range1.Find(what:=Disease, LookAt:=xlWhole, LookIn:=xlValues, MatchCase:=False, SearchFormat:=False)
+' We should always find the disease, but making sure everything is ok, let us test it
+   If Not foundDisease Is Nothing Then
+          findDiseaseAddress = foundDisease.Address
+    End If
+    ' Perhaps error procedures telling if database is broeken?
+End With
+     
+
+LetsContinue:
+    Application.EnableEvents = True
+    Exit Function
+
+Whoa:
+    MsgBox Err.Description
+    Resume LetsContinue
+    
+
+End Function
+
+Sub countWords()
+On Error GoTo Whoa
+' This sub counts trimmed words from symptoms-column
+' Execution of this sub will take time, therefore we assign this to button
+Dim rng As Range, cell As Range
+Dim cellWords, totalWords As Long, content As String
+
+Set rng = ThisWorkbook.Sheets("db").Range("E:E") ' Range of symptoms - obs! not dynamic!
+' Counters
+cellWords = 0
+totalWords = 0
+
+' Range loop for word count
+For Each cell In rng
+    If Not cell.HasFormula Then 'Skip formulas, should not be in symptoms
+        content = cell.Value
+        content = Trim(content)
+        If content = "" Then
+            cellWords = 0 'Not a word
+        Else
+            cellWords = 1 'Is a word
+        End If
+        ' Same row has more words, let's count all of them - use "." if you would like to count phrases
+        Do While InStr(content, " ") > 0
+            content = Mid(content, InStr(content, " "))
+            content = Trim(content)
+            cellWords = cellWords + 1
+        Loop
+        totalWords = totalWords + cellWords
+    End If
+Next cell
+
+ThisWorkbook.Sheets("User").Range("C2").Value = totalWords 'Set word count to C2
+
+LetsContinue:
+    Application.EnableEvents = True
+    Exit Sub
+
+Whoa:
+    MsgBox Err.Description
+    Resume LetsContinue
+
+End Sub
+
+Sub checkLearned()
+' On Error GoTo Whoa
+Application.EnableEvents = True
+' This sub will check if vectors are found from Learned-sheet
+' If we find disease name and matching vectors, then we display learned disease, not predicted disease
+Dim learnedSymp1 As String, learnedSymp2 As String, learnedSymp3 As String
+Dim learnedSymp4 As String, learnedSymp5 As String, learnedSymp6 As String
+Dim forecastSymp As String
+Dim foundDisease As String
+Dim lastRow As Long ' Last used row & disease number
+Dim foundRow As Long ' For found diseasename row
+Dim ws As Worksheet
+Dim lRow As Long 'Range definition row number
+Dim aCell As Range, range1 As Range 'Range definition
+Set ws = ThisWorkbook.Sheets("Learning") ' Select db sheet
+Dim checkDisease As Range, range3 As Range
+Dim col, row ' For column and row again
+Dim disAddress As String
+
+Worksheets("User").Activate
+forecastSymp = ThisWorkbook.Sheets("User").Range("B13").Value ' Read predicted disease name
+lastRow = ThisWorkbook.Sheets("Learning").Range("I8").Value ' Value of the highest row = -9
+
+' Set search range
+Set range3 = ThisWorkbook.Sheets("Learning").Range("A10:G" & lastRow)
+ 
+With range3 ' With search range do
+
+' Check if predicted disease exist in Learned values
+Set checkDisease = range3.Find(what:=forecastSymp, LookAt:=xlWhole, LookIn:=xlValues, MatchCase:=True, SearchFormat:=False)
+' It does
+   If Not checkDisease Is Nothing Then
+          ' Compare vectors, if all matches, then we display learned information
+           foundRow = range3.row + 1 ' Row of found disease
+           
+           ' Read learned vectors for this disease
+           learnedSymp1 = ThisWorkbook.Sheets("Learning").Range("B" & foundRow).Value
+           learnedSymp2 = ThisWorkbook.Sheets("Learning").Range("C" & foundRow).Value
+           learnedSymp3 = ThisWorkbook.Sheets("Learning").Range("D" & foundRow).Value
+           learnedSymp4 = ThisWorkbook.Sheets("Learning").Range("E" & foundRow).Value
+           learnedSymp5 = ThisWorkbook.Sheets("Learning").Range("F" & foundRow).Value
+           learnedSymp6 = ThisWorkbook.Sheets("Learning").Range("G" & foundRow).Value
+                                          
+          ' Compare vector1 to learned vectors
+          If ThisWorkbook.Sheets("User").Range("symptom1") = learnedSymp1 Or ThisWorkbook.Sheets("User").Range("symptom1") = learnedSymp2 Or _
+           ThisWorkbook.Sheets("User").Range("symptom1") = learnedSymp3 Or ThisWorkbook.Sheets("User").Range("symptom1") = learnedSymp4 Or _
+           ThisWorkbook.Sheets("User").Range("symptom1") = learnedSymp5 Or ThisWorkbook.Sheets("User").Range("symptom1") = learnedSymp6 Then
+           If ThisWorkbook.Sheets("User").Range("symptom2") = learnedSymp1 Or ThisWorkbook.Sheets("User").Range("symptom2") = learnedSymp2 Or _
+            ThisWorkbook.Sheets("User").Range("symptom2") = learnedSymp3 Or ThisWorkbook.Sheets("User").Range("symptom2") = learnedSymp4 Or _
+            ThisWorkbook.Sheets("User").Range("symptom2") = learnedSymp5 Or ThisWorkbook.Sheets("User").Range("symptom2") = learnedSymp6 Then
+            ' Yes, vector1 match, vector2 match, does vector 3 match?
+             If ThisWorkbook.Sheets("User").Range("symptom3") = learnedSymp1 Or ThisWorkbook.Sheets("User").Range("symptom3") = learnedSymp2 Or _
+              ThisWorkbook.Sheets("User").Range("symptom3") = learnedSymp3 Or ThisWorkbook.Sheets("User").Range("symptom3") = learnedSymp4 Or _
+              ThisWorkbook.Sheets("User").Range("symptom3") = learnedSymp5 Or ThisWorkbook.Sheets("User").Range("symptom3") = learnedSymp6 Then
+              ' Yes, vector1 match, vector2 match, vector 3 match, does vector 4 match?
+                If ThisWorkbook.Sheets("User").Range("symptom4") = learnedSymp1 Or ThisWorkbook.Sheets("User").Range("symptom4") = learnedSymp2 Or _
+                 ThisWorkbook.Sheets("User").Range("symptom4") = learnedSymp3 Or ThisWorkbook.Sheets("User").Range("symptom4") = learnedSymp4 Or _
+                 ThisWorkbook.Sheets("User").Range("symptom4") = learnedSymp5 Or ThisWorkbook.Sheets("User").Range("symptom4") = learnedSymp6 Then
+                 ' Yes, vector1 match, vector2 match, vector 3 match, vector 4 match, does vector 5 match?
+                   If ThisWorkbook.Sheets("User").Range("symptom5") = learnedSymp1 Or ThisWorkbook.Sheets("User").Range("symptom5") = learnedSymp2 Or _
+                    ThisWorkbook.Sheets("User").Range("symptom5") = learnedSymp3 Or ThisWorkbook.Sheets("User").Range("symptom5") = learnedSymp4 Or _
+                    ThisWorkbook.Sheets("User").Range("symptom5") = learnedSymp5 Or ThisWorkbook.Sheets("User").Range("symptom5") = learnedSymp6 Then
+                    ' Yes, vector1 match, vector2 match, vector 3 match, vector 4 match, vector 5 match, does last vector 6 match?
+                     If ThisWorkbook.Sheets("User").Range("symptom6") = learnedSymp1 Or ThisWorkbook.Sheets("User").Range("symptom6") = learnedSymp2 Or _
+                      ThisWorkbook.Sheets("User").Range("symptom6") = learnedSymp3 Or ThisWorkbook.Sheets("User").Range("symptom6") = learnedSymp4 Or _
+                      ThisWorkbook.Sheets("User").Range("symptom6") = learnedSymp5 Or ThisWorkbook.Sheets("User").Range("symptom6") = learnedSymp6 Then
+                        ' If we end up to here, then we just replace disase name at user sheet and inform user, that this is learned disease
+                        ' Observe, that this method compares exact wording, meaning, that capital letters matters!
+                                                                                       
+                         MsgBox ("Learned! This disease is not predicted!")
+                             Range("E12").Value = "THIS DISEASE IS LEARNED!"
+                        
+                        ' Colour of the range
+                          Range("B13:E22").Interior.ColorIndex = 8
+                           foundDisease = ThisWorkbook.Sheets("Learning").Range("K" & foundRow).Value 'Right disease from the Learning
+                          ' Let we see which address it came from
+                          disAddress = findDiseaseAddress(foundDisease)
+                          col = Split(disAddress, "$")(1)
+                          row = Split(disAddress, "$")(2)
+                        'Right disease name
+                          ThisWorkbook.Sheets("User").Range("B13").Value = ThisWorkbook.Sheets("db").Range("A" & row).Value
+                        '  Disease reference
+                          ThisWorkbook.Sheets("User").Range("B14").Value = ThisWorkbook.Sheets("db").Range("B" & row).Value
+                        'Summary
+                          ThisWorkbook.Sheets("User").Range("B15").Value = ThisWorkbook.Sheets("db").Range("c" & row).Value
+                        'Causes
+                          ThisWorkbook.Sheets("User").Range("B16").Value = ThisWorkbook.Sheets("db").Range("d" & row).Value
+                        'Full list of symptoms
+                          ThisWorkbook.Sheets("User").Range("B17").Value = ThisWorkbook.Sheets("db").Range("e" & row).Value
+                        'Exams and tests
+                          ThisWorkbook.Sheets("User").Range("B18").Value = ThisWorkbook.Sheets("db").Range("f" & row).Value
+                        'Treatment
+                          ThisWorkbook.Sheets("User").Range("B19").Value = ThisWorkbook.Sheets("db").Range("g" & row).Value
+                        'Prognosis
+                          ThisWorkbook.Sheets("User").Range("B20").Value = ThisWorkbook.Sheets("db").Range("h" & row).Value
+                        'Possible complications
+                          ThisWorkbook.Sheets("User").Range("B21").Value = ThisWorkbook.Sheets("db").Range("i" & row).Value
+                        'Alternative Names
+                          ThisWorkbook.Sheets("User").Range("B22").Value = ThisWorkbook.Sheets("db").Range("j" & row).Value
+                                                                       
+                        
+                      End If '6th
+                    End If '5th
+                   End If '4th
+                 End If '3rd
+                End If '2nd
+               End If '1st
+          End If ' It does
+End With
+
+
+
+LetsContinue:
+    Application.EnableEvents = True
+    Exit Sub
+
+Whoa:
+    MsgBox Err.Description
+    Resume LetsContinue
+
+End Sub
+
