@@ -302,54 +302,25 @@ disNumber = ThisWorkbook.Sheets("Learning").Range("I8").Value 'Here we have valu
 
     Worksheets("Learning").Activate
     ' Number 1 to count number
-    ThisWorkbook.Sheets("Learning").Range("J10").Value = 1
-    ' Disease name
-    ThisWorkbook.Sheets("Learning").Range("A10").Value = ThisWorkbook.Sheets("User").Range("B13").Value
-    ' Vector 1
-    ThisWorkbook.Sheets("Learning").Range("B10").Value = ThisWorkbook.Sheets("User").Range("symptom1").Value
-    ' Vector 2
-    ThisWorkbook.Sheets("Learning").Range("C10").Value = ThisWorkbook.Sheets("User").Range("symptom2").Value
-    ' Vector 3
-    ThisWorkbook.Sheets("Learning").Range("D10").Value = ThisWorkbook.Sheets("User").Range("symptom3").Value
-    ' Vector 4
-    ThisWorkbook.Sheets("Learning").Range("E10").Value = ThisWorkbook.Sheets("User").Range("symptom4").Value
-    ' Vector 5
-    ThisWorkbook.Sheets("Learning").Range("F10").Value = ThisWorkbook.Sheets("User").Range("symptom5").Value
-    ' Vector 6
-    ThisWorkbook.Sheets("Learning").Range("G10").Value = ThisWorkbook.Sheets("User").Range("symptom6").Value
-    ' Probalitity %
-    ThisWorkbook.Sheets("Learning").Range("H10").Value = ThisWorkbook.Sheets("User").Range("B23").Value
-    ' % of maximums
-    ThisWorkbook.Sheets("Learning").Range("I10").Value = ThisWorkbook.Sheets("User").Range("D23").Value
-    ' User selected correct disease
-    ThisWorkbook.Sheets("Learning").Range("K10").Value = ThisWorkbook.Sheets("User").Range("selectedDiseaseName")
-        
-   ' ThisWorkbook.Sheets("Learning").Range("A10:K10").Select 'Make selection and expand it
-   ' Selection.Name = "supervisedList"
-    
-    Worksheets("User").Activate
-    
-    ThisWorkbook.Sheets("User").Range("AnswerYesNo").Value = "N" 'Reset setting back to No
-    ThisWorkbook.Sheets("User").Range("sureYesNo").Value = "N" 'Reset setting back to No
-    ThisWorkbook.Sheets("User").Range("correctDiseaseName").Value = "" 'Reset setting back to No
-    ThisWorkbook.Sheets("User").Range("selectedDiseaseName").Value = "" 'Reset setting back to No
-    ThisWorkbook.Sheets("User").Range("B25:E33").Interior.ColorIndex = 0
-    ThisWorkbook.Sheets("User").Range("B25:E33").Clear
-
-   
-  End If
-
-  
-End If ' First IF
-
-LetsContinue:
-    Application.EnableEvents = True
-    Exit Sub
-
-Whoa:
-    MsgBox Err.Description
-    Resume LetsContinue
-
-
-
+Private Sub Worksheet_Change(ByVal Target As Range)
+' This sub monitor changes in symptom names and fire subroutines if changed
+' Some subs may use END statement, which stops this as well. Then ctrl+r will restart this sub as well.
+     If Target.Address = "$A$5" Or Target.Address = "$A$6" Or Target.Address = "$A$7" _
+     Or Target.Address = "$A$8" Or Target.Address = "$A$9" Or Target.Address = "$A$10" Then
+     ' Execute readdisease sub
+        Module1.readisease
+ End If
+ ' Monitor Consider this result as a false positive change and name change
+     If Target.Address = "$B$24" Or Target.Address = "$D$24" Then ' Execute readYesNo sub
+        Module2.readYesNo
+     End If
+     
+     If Target.Address = "$E$24" Then ' Execute when disease is selected
+        Module2.listDetails
+     End If
+     
+     If Target.Address = "$B$34" Then ' Execute when disease is selected AND person is sure that wants to add item
+        Module2.readsureYesNo
+     End If
 End Sub
+
